@@ -1,0 +1,164 @@
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Both jobs use a stand-in "Claude" that logs how it was started, so they test
+# the launchers themselves, not Claude Desktop.
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build a fake Claude.exe
+        run: |
+          $src = @'
+          using System; using System.IO;
+          public static class Program {
+            public static void Main(string[] args) {
+              File.AppendAllText(Environment.GetEnvironmentVariable("FAKE_CLAUDE_LOG"),
+                "args=" + String.Join(" ", args) + " | config=" + Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR") + Environment.NewLine);
+            }
+          }
+          '@
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\fake" | Out-Null
+          Add-Type -TypeDefinition $src -OutputAssembly "$env:RUNNER_TEMP\fake\Claude.exe" -OutputType ConsoleApplication
+          "FAKE_CLAUDE_LOG=$env:RUNNER_TEMP\fake\log.txt" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills\demo" | Out-Null
+          'global rules' | Set-Content "$env:USERPROFILE\.claude\CLAUDE.md"
+          'demo' | Set-Content "$env:USERPROFILE\.claude\skills\demo\SKILL.md"
+
+      - name: Install 3 profiles
+        run: scripts\windows\install.ps1 -Count 3 -CopyCodeSettings -ClaudeExe "$env:RUNNER_TEMP\fake\Claude.exe"
+
+      - name: Check shortcuts, icons and copied settings
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $start = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
+          $desk = [Environment]::GetFolderPath('Desktop')
+          foreach ($n in 1..3) {
+            foreach ($lnk in "$start\Claude $n.lnk", "$desk\Claude $n.lnk") {
+              if (-not (Test-Path $lnk)) { throw "missing $lnk" }
+            }
+            $ico = "$env:LOCALAPPDATA\claude-desktop-profiles\claude$n.ico"
+            # Read the .ico by hand: System.Drawing can't decode its PNG frames.
+            $bytes = [System.IO.File]::ReadAllBytes($ico)
+            if ([BitConverter]::ToUInt16($bytes, 2) -ne 1 -or [BitConverter]::ToUInt16($bytes, 4) -ne 5) { throw "bad header in $ico" }
+            if ($bytes[6] -ne 0) { throw "first frame of $ico is not 256px" }
+            $len = [BitConverter]::ToUInt32($bytes, 14); $off = [BitConverter]::ToUInt32($bytes, 18)
+            $frame = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream (, $bytes[$off..($off + $len - 1)])))
+            if ($frame.Width -ne 256) { throw "256px frame of $ico is $($frame.Width)px" }
+            New-Item -ItemType Directory -Force icons | Out-Null
+            $frame.Save("$PWD\icons\windows-claude$n.png")
+          }
+          foreach ($n in 2, 3) {
+            if (-not (Test-Path "$env:USERPROFILE\.claude-$n\CLAUDE.md")) { throw "CLAUDE.md not copied to profile $n" }
+            if (-not (Test-Path "$env:USERPROFILE\.claude-$n\skills\demo\SKILL.md")) { throw "skills not copied to profile $n" }
+          }
+
+      - name: Launch profiles (script and shortcut)
+        run: |
+          $dir = "$env:LOCALAPPDATA\claude-desktop-profiles"
+          & "$dir\launch.ps1" -Number 1
+          & "$dir\launch.ps1" -Number 2
+          Start-Process "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Claude 3.lnk"
+          Start-Sleep -Seconds 15
+          $log = Get-Content $env:FAKE_CLAUDE_LOG
+          $log
+          $expect2 = "args=--user-data-dir=$env:APPDATA\Claude-2 | config=$env:USERPROFILE\.claude-2"
+          $expect3 = "args=--user-data-dir=$env:APPDATA\Claude-3 | config=$env:USERPROFILE\.claude-3"
+          if ($log -notcontains "args= | config=") { throw 'profile 1 should start Claude with no flags' }
+          if ($log -notcontains $expect2) { throw "profile 2 wrong: expected $expect2" }
+          if ($log -notcontains $expect3) { throw "profile 3 (via shortcut) wrong: expected $expect3" }
+
+      - name: Uninstall
+        run: |
+          scripts\windows\uninstall.ps1 -Number 3
+          if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Claude 3.lnk") { throw 'Claude 3 not removed' }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Claude 2.lnk")) { throw 'Claude 2 removed by mistake' }
+          scripts\windows\uninstall.ps1
+          if (Test-Path "$env:LOCALAPPDATA\claude-desktop-profiles") { throw 'helper folder left behind' }
+          if (-not (Test-Path "$env:APPDATA\Claude-2")) { throw 'profile data must be kept' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-icons
+          path: icons
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build a fake Claude.app
+        run: |
+          APP=/Applications/Claude.app
+          sudo rm -rf "$APP"
+          sudo mkdir -p "$APP/Contents/MacOS"
+          sudo tee "$APP/Contents/MacOS/Claude" >/dev/null <<'EOF'
+          #!/bin/bash
+          echo "args=$* | config=$CLAUDE_CONFIG_DIR" >> /tmp/fake-claude.log
+          sleep 60
+          EOF
+          sudo tee "$APP/Contents/Info.plist" >/dev/null <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <plist version="1.0"><dict>
+            <key>CFBundleExecutable</key><string>Claude</string>
+            <key>CFBundleIdentifier</key><string>test.fake.claude</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+          </dict></plist>
+          EOF
+          sudo chmod +x "$APP/Contents/MacOS/Claude"
+          sudo chown -R "$USER" "$APP"
+          mkdir -p ~/.claude/skills/demo
+          echo 'global rules' > ~/.claude/CLAUDE.md
+          echo demo > ~/.claude/skills/demo/SKILL.md
+
+      - name: Install 3 profiles
+        run: scripts/macos/install.sh 3 --copy-code-settings
+
+      - name: Check apps, icons, Dock and copied settings
+        run: |
+          mkdir -p icons
+          for n in 1 2 3; do
+            sips -g pixelWidth "/Applications/Claude $n.app/Contents/Resources/icon.icns" | grep -q 1024
+            sips -s format png "/Applications/Claude $n.app/Contents/Resources/icon.icns" --out "icons/macos-claude$n.png" >/dev/null
+            codesign -v "/Applications/Claude $n.app"
+          done
+          defaults read com.apple.dock persistent-apps | grep -c 'Claude%20' | grep -q 3
+          for n in 2 3; do
+            test -f ~/.claude-$n/CLAUDE.md
+            test -f ~/.claude-$n/skills/demo/SKILL.md
+          done
+
+      - name: Launch profile 2, then click it again
+        run: |
+          "/Applications/Claude 2.app/Contents/MacOS/launch"
+          sleep 5
+          cat /tmp/fake-claude.log
+          grep -qxF "args=--user-data-dir=$HOME/Library/Application Support/Claude-2 | config=$HOME/.claude-2" /tmp/fake-claude.log
+          # Second click must focus the running copy, not start another.
+          "/Applications/Claude 2.app/Contents/MacOS/launch" || true
+          sleep 3
+          test "$(wc -l < /tmp/fake-claude.log)" -eq 1
+
+      - name: Uninstall
+        run: |
+          scripts/macos/uninstall.sh 3
+          test ! -e "/Applications/Claude 3.app"
+          test -e "/Applications/Claude 2.app"
+          scripts/macos/uninstall.sh
+          test ! -e "/Applications/Claude 1.app"
+          defaults read com.apple.dock persistent-apps | grep -q 'file:///Applications/Claude.app/'
+          test -d "$HOME/Library/Application Support/Claude-2"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-icons
+          path: icons
