@@ -8,7 +8,7 @@
 ![Windows](https://img.shields.io/badge/Windows-supported-0078D4?logo=windows)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-<img src="docs/preview.svg" alt="Two numbered launchers: Claude 1 for personal, Claude 2 for work" width="600">
+<img src="docs/preview.png" alt="The Claude icon with a dark number 1 badge, labelled personal, next to the Claude icon with a blue number 2 badge, labelled work" width="600">
 
 </div>
 

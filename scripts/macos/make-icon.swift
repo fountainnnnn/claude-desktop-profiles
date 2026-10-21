@@ -1,6 +1,6 @@
 // Draws the installed Claude icon with a numbered badge, as a 1024px PNG.
-// The icon is read from the user's own Claude.app at install time, so no
-// Anthropic artwork ships in this repo.
+// The icon is read from the user's own Claude.app at install time, so it
+// always matches the Claude version they have installed.
 // Usage: make-icon <out.png> <label> <hex color>
 import AppKit
 
