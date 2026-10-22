@@ -16,8 +16,15 @@ BIN="/Applications/Claude.app/Contents/MacOS/Claude"
 LOG="$DIR/update-helper.log"
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
-main_procs() { ps -axww -o pid=,command= | grep -F "$BIN" | grep -v -e "--type=" -e "grep"; }
-installer_waiting() { pgrep -f "Squirrel.framework/Resources/ShipIt" >/dev/null; }
+# This user's main Claude processes, matched on the program itself (helpers run
+# from Frameworks/ and carry --type=).
+main_procs() {
+  ps -x -U "$(id -u)" -ww -o pid=,command= | awk -v bin="$BIN" '{
+    cmd = $0; sub(/^ *[0-9]+ /, "", cmd)
+    if ((cmd == bin || index(cmd, bin " ") == 1) && cmd !~ / --type=/) print
+  }'
+}
+installer_waiting() { pgrep -u "$(id -u)" -f "Squirrel.framework/Resources/ShipIt" >/dev/null; }
 relaunch_requested() { [ "$(plutil -extract launchAfterInstallation raw "$STATE" 2>/dev/null)" = true ]; }
 profile_of() { # "<command line>" -> profile number
   local data="--user-data-dir=$HOME/Library/Application Support/Claude-"
@@ -37,9 +44,12 @@ procs="$(main_procs)"
 
 pids=() profiles=()
 while read -r pid cmd; do
+  n="$(profile_of "$cmd")"
+  [[ "$n" =~ ^[1-9]$ ]] || continue   # only profiles this tool can make
   pids+=("$pid")
-  profiles+=("$(profile_of "$cmd")")
+  profiles+=("$n")
 done <<< "$procs"
+[ ${#pids[@]} -gt 0 ] || exit 0
 
 log "update waiting on open account(s) ${profiles[*]}; closing them"
 osascript -e 'display notification "Closing your other Claude accounts so the update can install. They will reopen in a moment." with title "Claude update"' 2>/dev/null

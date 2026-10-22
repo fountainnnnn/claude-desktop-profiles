@@ -8,8 +8,14 @@ CLAUDE_APP="/Applications/Claude.app"
 BIN="$CLAUDE_APP/Contents/MacOS/Claude"
 HERE="$(dirname "$0")"
 
-# Main Claude processes only: helpers run from Frameworks/ and carry --type=.
-main_procs() { ps -axww -o pid=,command= | grep -F "$BIN" | grep -v -e "--type=" -e "grep"; }
+# This user's main Claude processes, matched on the program itself (helpers run
+# from Frameworks/ and carry --type=).
+main_procs() {
+  ps -x -U "$(id -u)" -ww -o pid=,command= | awk -v bin="$BIN" '{
+    cmd = $0; sub(/^ *[0-9]+ /, "", cmd)
+    if ((cmd == bin || index(cmd, bin " ") == 1) && cmd !~ / --type=/) print
+  }'
+}
 
 if [ "$PROFILE" = 1 ]; then
   PID=$(main_procs | grep -v -e "--user-data-dir" | awk '{print $1}' | head -1)
