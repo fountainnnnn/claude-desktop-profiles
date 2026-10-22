@@ -1,10 +1,17 @@
-// Brings the Claude process with the given PID to the front and asks it to
-// reopen its window (what a normal Dock click does), in case the window was
-// closed with the red button while the app kept running.
+// activate <pid>         Brings that Claude process to the front and asks it to
+//                        reopen its window (what a normal Dock click does), in
+//                        case the window was closed with the red button.
+// activate --quit <pid>  Asks that Claude process to quit normally, as Cmd+Q
+//                        would. Used by update-helper.sh.
 import AppKit
 
-guard CommandLine.arguments.count > 1, let pid = Int32(CommandLine.arguments[1]),
+var args = Array(CommandLine.arguments.dropFirst())
+let quit = args.first == "--quit"
+if quit { args.removeFirst() }
+guard let arg = args.first, let pid = Int32(arg),
       let app = NSRunningApplication(processIdentifier: pid) else { exit(1) }
+
+if quit { exit(app.terminate() ? 0 : 1) }
 
 let reopen = NSAppleEventDescriptor(
     eventClass: AEEventClass(kCoreEventClass), eventID: AEEventID(kAEReopenApplication),

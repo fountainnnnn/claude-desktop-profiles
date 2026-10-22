@@ -135,6 +135,11 @@ setup moves. The Mac installer backs up your Dock layout before each change to
   Claude is open, the Dock or taskbar shows the normal Claude icon for every
   account. The account name at the bottom of Claude's sidebar tells you which one
   you're in.
+- **Updates (Mac).** Claude installs updates by quitting and relaunching, and
+  the installer waits until every copy of Claude has quit. A small helper,
+  started by macOS only when an update is being installed, closes your other
+  accounts normally, waits for the update, then reopens them. Without it, the
+  account that quit for the update would stay closed.
 - **Connectors that sign in through the browser** (MCP OAuth) have the same
   routing quirk as sign-in. Quit the other accounts while you connect one.
 - **Windows: one Cowork workspace at a time.** Claude's Cowork VM runs one per

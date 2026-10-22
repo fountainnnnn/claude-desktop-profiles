@@ -101,11 +101,19 @@ jobs:
           APP=/Applications/Claude.app
           sudo rm -rf "$APP"
           sudo mkdir -p "$APP/Contents/MacOS"
-          sudo tee "$APP/Contents/MacOS/Claude" >/dev/null <<'EOF'
-          #!/bin/bash
-          echo "args=$* | config=$CLAUDE_CONFIG_DIR" >> /tmp/fake-claude.log
-          sleep 60
+          # A real Cocoa app, so it quits on request like Claude does.
+          cat > "$RUNNER_TEMP/fake.swift" <<'EOF'
+          import AppKit
+          let args = CommandLine.arguments.dropFirst().joined(separator: " ")
+          let config = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? ""
+          let line = "args=\(args) | config=\(config)\n"
+          if let h = FileHandle(forWritingAtPath: "/tmp/fake-claude.log") { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!) }
+          else { try! line.write(toFile: "/tmp/fake-claude.log", atomically: true, encoding: .utf8) }
+          NSApplication.shared.setActivationPolicy(.regular)
+          NSApplication.shared.run()
           EOF
+          swiftc -O "$RUNNER_TEMP/fake.swift" -o "$RUNNER_TEMP/Claude"
+          sudo cp "$RUNNER_TEMP/Claude" "$APP/Contents/MacOS/Claude"
           sudo tee "$APP/Contents/Info.plist" >/dev/null <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <plist version="1.0"><dict>
@@ -148,6 +156,30 @@ jobs:
           sleep 3
           test "$(wc -l < /tmp/fake-claude.log)" -eq 1
 
+      - name: Update helper closes and reopens other accounts
+        run: |
+          SUPPORT="$HOME/Library/Application Support/claude-desktop-profiles"
+          test -x "$SUPPORT/update-helper.sh"
+          before=$(grep -c 'Claude-2 |' /tmp/fake-claude.log)
+          # Pretend Claude quit to install an update: the installer is waiting
+          # (for 25s) and the state file asks for a relaunch.
+          bash -c 'exec -a /tmp/Squirrel.framework/Resources/ShipIt sleep 25' &
+          mkdir -p ~/Library/Caches/com.anthropic.claudefordesktop.ShipIt
+          plutil -create xml1 ~/Library/Caches/com.anthropic.claudefordesktop.ShipIt/ShipItState.plist
+          plutil -insert launchAfterInstallation -bool true ~/Library/Caches/com.anthropic.claudefordesktop.ShipIt/ShipItState.plist
+          # launchd should start the helper on its own; run it directly if the
+          # runner has no GUI launchd session.
+          if ! launchctl print "gui/$(id -u)/local.claude-desktop-profiles.update-helper" >/dev/null 2>&1; then
+            bash "$SUPPORT/update-helper.sh" &
+          fi
+          for _ in $(seq 1 45); do grep -q 'reopening' "$SUPPORT/update-helper.log" 2>/dev/null && break; sleep 2; done
+          sleep 8
+          cat "$SUPPORT/update-helper.log"
+          cat /tmp/fake-claude.log
+          grep -q 'closing them' "$SUPPORT/update-helper.log"
+          grep -q 'update installed; reopening account(s) 2' "$SUPPORT/update-helper.log"
+          test "$(grep -c 'Claude-2 |' /tmp/fake-claude.log)" -eq $((before + 1))
+
       - name: Uninstall
         run: |
           scripts/macos/uninstall.sh 3
@@ -157,6 +189,7 @@ jobs:
           test ! -e "/Applications/Claude 1.app"
           defaults read com.apple.dock persistent-apps | grep -q 'file:///Applications/Claude.app/'
           test -d "$HOME/Library/Application Support/Claude-2"
+          test ! -e ~/Library/LaunchAgents/local.claude-desktop-profiles.update-helper.plist
 
       - uses: actions/upload-artifact@v4
         with:

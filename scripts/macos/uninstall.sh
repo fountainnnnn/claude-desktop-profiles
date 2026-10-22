@@ -40,6 +40,16 @@ done
 [ ${#removed[@]} -gt 0 ] || exit 0
 python3 "$HERE/dock.py" remove "${removed[@]}"
 
+# Last launcher gone: remove the update helper too.
+if ! ls -d /Applications/Claude\ [0-9]*.app >/dev/null 2>&1; then
+  AGENT_ID="local.claude-desktop-profiles.update-helper"
+  launchctl bootout "gui/$(id -u)/$AGENT_ID" 2>/dev/null || true
+  rm -f "$HOME/Library/LaunchAgents/$AGENT_ID.plist"
+  SUPPORT="$HOME/Library/Application Support/claude-desktop-profiles"
+  rm -f "$SUPPORT/update-helper.sh" "$SUPPORT/activate" "$SUPPORT/update-helper.log"
+  echo "Removed the update helper"
+fi
+
 for n in "${removed[@]}"; do
   [ "$n" = 1 ] && continue
   for dir in "$HOME/Library/Application Support/Claude-$n" "$HOME/.claude-$n"; do

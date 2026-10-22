@@ -60,6 +60,11 @@ Account data is kept and the script prints the paths:
 - **Mac: clicking Claude 2 shows no window.** The "control Claude" prompt was
   declined. Re-enable it under System Settings → Privacy & Security →
   Automation, or quit Claude 2 with Cmd+Q and click again.
+- **Mac: a Claude window closes by itself.** That's an auto-update. The
+  installed update helper closes the other accounts so the update can finish,
+  then reopens them; its log is
+  `~/Library/Application Support/claude-desktop-profiles/update-helper.log`.
+  If it's missing, re-run the installer.
 - **Mac: asked for permission again after re-installing.** Expected. macOS ties
   the permission to the launcher's signature, which changes on a rebuild.
 - **Windows: "Claude Desktop wasn't found".** Re-run with

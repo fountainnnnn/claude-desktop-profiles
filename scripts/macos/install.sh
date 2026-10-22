@@ -98,6 +98,31 @@ EOF
   fi
 done
 
+# Update helper: lets Claude's auto-update finish while several accounts are
+# open (see update-helper.sh). launchd starts it only when the update state changes.
+SUPPORT="$HOME/Library/Application Support/claude-desktop-profiles"
+AGENT_ID="local.claude-desktop-profiles.update-helper"
+AGENT="$HOME/Library/LaunchAgents/$AGENT_ID.plist"
+mkdir -p "$SUPPORT" "$HOME/Library/LaunchAgents"
+cp "$HERE/update-helper.sh" "$WORK/activate" "$SUPPORT/"
+chmod +x "$SUPPORT/update-helper.sh" "$SUPPORT/activate"
+codesign --force -s - "$SUPPORT/activate" 2>/dev/null
+cat > "$AGENT" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$AGENT_ID</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$SUPPORT/update-helper.sh</string></array>
+  <key>WatchPaths</key><array><string>$HOME/Library/Caches/com.anthropic.claudefordesktop.ShipIt/ShipItState.plist</string></array>
+</dict></plist>
+EOF
+launchctl bootout "gui/$(id -u)/$AGENT_ID" 2>/dev/null || true
+if launchctl bootstrap "gui/$(id -u)" "$AGENT" 2>/dev/null; then
+  echo "Installed the update helper"
+else
+  echo "Couldn't start the update helper; it will start at next login." >&2
+fi
+
 if [ "$DOCK" = 1 ]; then
   python3 "$HERE/dock.py" add $(seq 1 "$COUNT")
 fi
