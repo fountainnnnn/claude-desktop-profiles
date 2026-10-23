@@ -64,9 +64,11 @@ def main():
         wanted = [url(t) for t in apps]
         # The Dock can save its own copy of the list while we write ours (it
         # does when apps open or quit), so check the result and retry.
-        for _ in range(5):
+        for attempt in range(5):
             subprocess.run(["defaults", "import", "com.apple.dock", path], check=True)
-            subprocess.run(["killall", "Dock"], check=False)
+            # A normal quit lets the Dock save its old list over ours; on retries,
+            # stop it without saving (macOS restarts it straight away).
+            subprocess.run(["killall"] + (["-KILL"] if attempt else []) + ["Dock"], check=False)
             time.sleep(2)
             subprocess.run(["defaults", "export", "com.apple.dock", check_path := path + ".now"], check=True)
             with open(check_path, "rb") as f:
