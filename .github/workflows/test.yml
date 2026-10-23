@@ -109,6 +109,14 @@ jobs:
           let line = "args=\(args) | config=\(config)\n"
           if let h = FileHandle(forWritingAtPath: "/tmp/fake-claude.log") { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!) }
           else { try! line.write(toFile: "/tmp/fake-claude.log", atomically: true, encoding: .utf8) }
+          // Like Claude with a task running: refuse to quit while /tmp/fake-veto exists.
+          class Delegate: NSObject, NSApplicationDelegate {
+            func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+              FileManager.default.fileExists(atPath: "/tmp/fake-veto") ? .terminateCancel : .terminateNow
+            }
+          }
+          let delegate = Delegate()
+          NSApplication.shared.delegate = delegate
           NSApplication.shared.setActivationPolicy(.regular)
           NSApplication.shared.run()
           EOF
@@ -176,9 +184,41 @@ jobs:
           sleep 8
           cat "$SUPPORT/update-helper.log"
           cat /tmp/fake-claude.log
-          grep -q 'closing them' "$SUPPORT/update-helper.log"
-          grep -q 'update installed; reopening account(s) 2' "$SUPPORT/update-helper.log"
+          grep -q 'asking 2 to quit too' "$SUPPORT/update-helper.log"
+          grep -q 'update installed; reopening' "$SUPPORT/update-helper.log"
           test "$(grep -c 'Claude-2 |' /tmp/fake-claude.log)" -eq $((before + 1))
+
+      - name: Update helper reopens Claude 1 when another account won't quit
+        run: |
+          SUPPORT="$HOME/Library/Application Support/claude-desktop-profiles"
+          STATE=~/Library/Caches/com.anthropic.claudefordesktop.ShipIt/ShipItState.plist
+          run_helper() {
+            launchctl print "gui/$(id -u)/local.claude-desktop-profiles.update-helper" >/dev/null 2>&1 || bash "$SUPPORT/update-helper.sh" &
+          }
+          main_pid() { ps -x -ww -o pid=,command= | awk -v want="$1" '$2 == "/Applications/Claude.app/Contents/MacOS/Claude" && (want == "1" ? NF == 2 : index($0, want)) {print $1; exit}'; }
+          : > "$SUPPORT/update-helper.log"
+          test -n "$(main_pid 1)" || "/Applications/Claude 1.app/Contents/MacOS/launch"
+          test -n "$(main_pid Claude-2)" || "/Applications/Claude 2.app/Contents/MacOS/launch"
+          sleep 4
+          # Update downloaded: helper notes accounts 1 and 2 are open.
+          plutil -create xml1 "$STATE"; plutil -insert launchAfterInstallation -bool false "$STATE"; run_helper
+          sleep 6
+          cat "$SUPPORT/open-before-update"
+          grep -qx 1 "$SUPPORT/open-before-update"
+          # Claude 2 is busy and refuses to quit; Claude 1 quits to update.
+          touch /tmp/fake-veto
+          kill "$(main_pid 1)"
+          before=$(grep -c '^args= | config=$' /tmp/fake-claude.log)
+          bash -c 'exec -a /tmp/Squirrel.framework/Resources/ShipIt sleep 120' &
+          plutil -replace launchAfterInstallation -bool true "$STATE"; run_helper
+          for _ in $(seq 1 60); do grep -q 'update postponed' "$SUPPORT/update-helper.log" && break; sleep 2; done
+          sleep 8
+          cat "$SUPPORT/update-helper.log"
+          grep -q "didn't quit" "$SUPPORT/update-helper.log"
+          test -n "$(main_pid Claude-2)"                       # busy account left alone
+          test "$(grep -c '^args= | config=$' /tmp/fake-claude.log)" -eq $((before + 1))   # Claude 1 back
+          rm -f /tmp/fake-veto
+          pkill -f /tmp/Squirrel.framework/Resources/ShipIt || true
 
       - name: Uninstall
         run: |
