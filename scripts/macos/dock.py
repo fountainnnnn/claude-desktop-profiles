@@ -61,9 +61,21 @@ def main():
 
         with open(path, "wb") as f:
             plistlib.dump(dock, f)
-        subprocess.run(["defaults", "import", "com.apple.dock", path], check=True)
+        wanted = [url(t) for t in apps]
+        # The Dock can save its own copy of the list while we write ours (it
+        # does when apps open or quit), so check the result and retry.
+        for _ in range(5):
+            subprocess.run(["defaults", "import", "com.apple.dock", path], check=True)
+            subprocess.run(["killall", "Dock"], check=False)
+            time.sleep(2)
+            subprocess.run(["defaults", "export", "com.apple.dock", check_path := path + ".now"], check=True)
+            with open(check_path, "rb") as f:
+                now = [url(t) for t in plistlib.load(f).get("persistent-apps", [])]
+            if now == wanted:
+                break
+        else:
+            sys.exit("The Dock kept its old layout; please try again.")
 
-    subprocess.run(["killall", "Dock"], check=False)
     print(f"Dock updated (previous layout saved to {backup})")
 
 

@@ -222,6 +222,7 @@ jobs:
 
       - name: Uninstall
         run: |
+          set -x
           scripts/macos/uninstall.sh 3
           test ! -e "/Applications/Claude 3.app"
           test -e "/Applications/Claude 2.app"
