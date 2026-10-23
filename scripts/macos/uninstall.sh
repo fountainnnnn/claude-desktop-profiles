@@ -32,13 +32,17 @@ for n in "$@"; do
     echo "Skipping $APP: it wasn't made by this tool." >&2
     continue
   fi
-  rm -rf "$APP"
   removed+=("$n")
-  echo "Removed $APP"
 done
-
 [ ${#removed[@]} -gt 0 ] || exit 0
+
+# Update the Dock before deleting the apps: once a Dock app disappears, the
+# Dock re-saves its own copy of the list when restarted, undoing our edit.
 python3 "$HERE/dock.py" remove "${removed[@]}"
+for n in "${removed[@]}"; do
+  rm -rf "/Applications/Claude $n.app"
+  echo "Removed /Applications/Claude $n.app"
+done
 
 # Last launcher gone: remove the update helper too.
 if ! ls -d /Applications/Claude\ [0-9]*.app >/dev/null 2>&1; then
