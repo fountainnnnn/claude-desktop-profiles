@@ -74,7 +74,7 @@ def main():
             if now == wanted:
                 break
         else:
-            sys.exit("The Dock kept its old layout; please try again.")
+            sys.exit(f"The Dock kept its old layout; please try again.\n  wanted: {wanted}\n  got:    {now}")
 
     print(f"Dock updated (previous layout saved to {backup})")
 
