@@ -138,8 +138,9 @@ setup moves. The Mac installer backs up your Dock layout before each change to
 - **Updates (Mac).** Claude installs updates by quitting and relaunching, and
   the installer waits until every copy of Claude has quit. A small helper,
   started by macOS only when an update is being installed, closes your other
-  accounts normally, waits for the update, then reopens them. Without it, the
-  account that quit for the update would stay closed.
+  accounts normally, waits for the update, then reopens them. If one of them
+  won't close because a Claude Code task is running, the helper reopens the
+  account that quit, and the update waits until you next quit every account.
 - **Connectors that sign in through the browser** (MCP OAuth) have the same
   routing quirk as sign-in. Quit the other accounts while you connect one.
 - **Windows: one Cowork workspace at a time.** Claude's Cowork VM runs one per
