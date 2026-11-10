@@ -146,6 +146,7 @@ jobs:
             sips -g pixelWidth "/Applications/Claude $n.app/Contents/Resources/icon.icns" | grep -q 1024
             sips -s format png "/Applications/Claude $n.app/Contents/Resources/icon.icns" --out "icons/macos-claude$n.png" >/dev/null
             codesign -v "/Applications/Claude $n.app"
+            test "$(defaults read "/Applications/Claude $n.app/Contents/Info.plist" CFBundleExecutable)" = launcher
           done
           defaults read com.apple.dock persistent-apps | grep -c 'Claude%20' | grep -q 3
           for n in 2 3; do
@@ -155,7 +156,8 @@ jobs:
 
       - name: Launch profile 2, then click it again
         run: |
-          "/Applications/Claude 2.app/Contents/MacOS/launch"
+          # Open the app bundle the way a Dock click does (exercises the launcher app).
+          open "/Applications/Claude 2.app"
           sleep 5
           cat /tmp/fake-claude.log
           grep -qxF "args=--user-data-dir=$HOME/Library/Application Support/Claude-2 | config=$HOME/.claude-2" /tmp/fake-claude.log

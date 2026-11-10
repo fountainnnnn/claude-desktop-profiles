@@ -43,6 +43,7 @@ trap 'rm -rf "$WORK"' EXIT
 echo "Compiling helpers..."
 swiftc -O "$HERE/activate.swift" -o "$WORK/activate"
 swiftc -O "$HERE/make-icon.swift" -o "$WORK/make-icon"
+swiftc -O "$HERE/launcher.swift" -o "$WORK/launcher"
 
 for n in $(seq 1 "$COUNT"); do
   APP="/Applications/Claude $n.app"
@@ -64,9 +65,9 @@ for n in $(seq 1 "$COUNT"); do
   rm -rf "$APP"
   mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
   iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/icon.icns"
-  cp "$WORK/activate" "$APP/Contents/MacOS/activate"
+  cp "$WORK/activate" "$WORK/launcher" "$APP/Contents/MacOS/"
   sed "s/__PROFILE__/$n/" "$HERE/launch.sh" > "$APP/Contents/MacOS/launch"
-  chmod +x "$APP/Contents/MacOS/launch" "$APP/Contents/MacOS/activate"
+  chmod +x "$APP/Contents/MacOS/launch" "$APP/Contents/MacOS/activate" "$APP/Contents/MacOS/launcher"
   cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -74,7 +75,7 @@ for n in $(seq 1 "$COUNT"); do
   <key>CFBundleName</key><string>Claude $n</string>
   <key>CFBundleDisplayName</key><string>Claude $n</string>
   <key>CFBundleIdentifier</key><string>$ID</string>
-  <key>CFBundleExecutable</key><string>launch</string>
+  <key>CFBundleExecutable</key><string>launcher</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>1</string>
